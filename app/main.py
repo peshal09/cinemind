@@ -30,6 +30,7 @@ from app.cache import redis_client
 from app.db.models import User
 from app.ratings import router as ratings_router
 from app.rag.ask import router as ask_router
+from app.rag.explain import router as explain_router
 from app.recommenders import popularity
 from app.search import router as search_router
 
@@ -73,6 +74,7 @@ app.include_router(auth_router)
 app.include_router(ratings_router)
 app.include_router(search_router)
 app.include_router(ask_router)
+app.include_router(explain_router)
 
 
 def get_model(

@@ -69,3 +69,34 @@ neighbors (cosine distance shown; lower = closer).
 | Megamind (2010) | Impostor (2002) |
 
 Before = "other 2010 movies"; after = mind-bending sci-fi / heist / dream / subconscious films.
+
+---
+
+## Personalized explanation — `GET /recommendations/{movie_id}/why`
+
+Grounded in the user's **actual rating history** + the movie's attributes (auth-protected).
+After the user rated Star Wars, Empire Strikes Back, Terminator 2, and Pulp Fiction 5★:
+
+**Request:** `GET /recommendations/79132/why` (Inception)
+```json
+{
+  "movie_id": 79132,
+  "title": "Inception (2010)",
+  "why": "If you loved the thrilling action and mind-bending sci-fi elements of *Terminator 2: Judgment Day* and the *Star Wars* films, *Inception* is sure to captivate you with its high-concept dream worlds and intense mission. Additionally, its gripping blend of crime, drama, and thriller genres will appeal to the same sensibilities that made you a fan of *Pulp Fiction*.",
+  "based_on": ["Star Wars: Episode IV - A New Hope (1977)",
+               "Star Wars: Episode V - The Empire Strikes Back (1980)",
+               "Terminator 2: Judgment Day (1991)", "Pulp Fiction (1994)"]
+}
+```
+A new account with no ratings gets a graceful cold-start message instead.
+
+---
+
+## Retrieval quality / RAG groundedness (`python -m app.eval.retrieval`)
+
+| Metric | Value |
+|---|---|
+| **Retrieval hit-rate@10** (keyword query → own movie in top-10, n=200) | **68%** (136/200) |
+| **Groundedness rate** (in-domain questions yielding a grounded, cited answer, n=8) | **100%** (8/8) |
+
+Ungrounded `/ask` answers are logged (`logger "cinemind.ask"`) for monitoring.

@@ -13,6 +13,7 @@ model to ignore any instructions embedded in it (prompt-injection defense).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 
@@ -29,6 +30,7 @@ from app.llm.factory import get_provider
 
 load_dotenv()
 
+logger = logging.getLogger("cinemind.ask")
 router = APIRouter(tags=["ask"])
 
 # Minimum best-match cosine similarity required before we call the LLM. Below
@@ -145,6 +147,10 @@ def ask(body: AskRequest, db: Session = Depends(get_db)) -> dict:
     if not citations:
         mentioned = [m.title for m in movies if m.title.lower() in answer.lower()]
         citations = _validate_citations(mentioned, movies)
+
+    # The LLM ran (passed the guard) but produced no grounded citation -> log it.
+    if not citations:
+        logger.warning("ungrounded /ask answer | question=%r", body.question)
 
     return {
         "answer": answer,
