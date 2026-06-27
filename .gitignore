@@ -15,3 +15,6 @@ data/*.zip
 .DS_Store
 .vscode/
 .idea/
+
+# Claude Code config (never committed)
+.claude/
