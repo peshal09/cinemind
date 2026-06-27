@@ -1,0 +1,45 @@
+# One-command stack: `docker compose up` -> api + postgres + redis.
+#
+# Secrets (SECRET_KEY, etc.) come from .env via env_file; the DB/Redis URLs are
+# overridden here to use the compose service hostnames. Postgres/Redis are not
+# published to the host (the API reaches them over the compose network), so this
+# won't clash with any standalone dev containers on 5432/6379.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16  # postgres:16 + the pgvector extension
+    environment:
+      POSTGRES_USER: cinemind
+      POSTGRES_PASSWORD: cinemind
+      POSTGRES_DB: cinemind
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinemind -d cinemind"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://cinemind:cinemind@postgres:5432/cinemind
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

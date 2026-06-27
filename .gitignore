@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Data (downloaded, not committed)
+data/ml-latest-small/
+data/*.zip
+
+# Env / editor
+.env
+.DS_Store
+.vscode/
+.idea/

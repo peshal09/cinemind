@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+numpy
+pandas
+scikit-learn
+pytest
+httpx
+sqlalchemy
+psycopg2-binary
+python-dotenv
+passlib[bcrypt]
+bcrypt==4.0.1
+python-jose[cryptography]
+redis
+sentence-transformers
+pgvector
+google-genai
