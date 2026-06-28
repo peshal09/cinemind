@@ -30,8 +30,8 @@ def auth_headers(client):
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_root_lists_models(client):
-    body = client.get("/").json()
+def test_api_info_lists_models(client):
+    body = client.get("/api").json()
     assert set(body["models"]) == {"collaborative", "content", "hybrid"}
 
 

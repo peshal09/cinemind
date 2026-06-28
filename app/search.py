@@ -11,6 +11,7 @@ Tune KEYWORD_WEIGHT toward 0 for "more semantic", toward 1 for "more literal".
 
 from __future__ import annotations
 
+import os
 import re
 
 from fastapi import APIRouter, Depends
@@ -25,7 +26,12 @@ from app.embeddings.model import embed_texts
 router = APIRouter(tags=["search"])
 
 # --- tunable knobs --------------------------------------------------------
-KEYWORD_WEIGHT = 0.3          # blend weight for the title keyword match [0, 1]
+# Blend weight for the title keyword match [0, 1]. Env-overridable so it can be
+# tuned without a rebuild. 0.15 keeps exact-title queries landing on the nose
+# while letting strong semantic (overview/keyword) matches outrank mere
+# title-word coincidences (e.g. "brothers" -> films about brotherhood, not just
+# every movie with "Brothers" in the title).
+KEYWORD_WEIGHT = float(os.getenv("SEARCH_KEYWORD_WEIGHT", "0.15"))
 CANDIDATE_MULTIPLIER = 5      # vector candidates to pull = max(k * this, MIN_POOL)
 MIN_CANDIDATE_POOL = 50
 # --------------------------------------------------------------------------
