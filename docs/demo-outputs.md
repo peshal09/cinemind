@@ -1,8 +1,8 @@
 # CineMind — Demo Outputs
 
 Captured artifacts for the README / interviews. All from the real running system
-(Postgres + pgvector + Redis; embeddings = title + genres + overview + keywords + cast;
-LLM = Google Gemini Flash).
+(Postgres + pgvector + Redis; embeddings = `gte-small` over title + genres + overview +
+keywords + cast; LLM = Google Gemini 2.5 Flash).
 
 ---
 
@@ -13,17 +13,19 @@ The endpoint embeds the question, retrieves the top-k movies from pgvector, and 
 citations are validated against the retrieved set (invented titles are dropped).
 
 ### 1. Grounded thematic question
-**Request:** `POST /ask {"question": "a mind-bending movie about dreams", "k": 5}`
+**Request:** `POST /ask {"question": "a film about boxing", "k": 5}`
 ```json
 {
-  "answer": "Based on the provided context, there are several movies centered around the theme of dreams. In \"Dreamscape (1984)\", a young man enters the dreams of patients to diagnose their psychic traumas. \"In Dreams (1999)\" features a housewife who has a psychic connection ...",
+  "answer": "The following movies are about boxing: \"Boxer, The (1997)\", \"Fighter, The (2010)\", \"Harder They Fall, The (1956)\", \"Rocky Balboa (2006)\", and \"Champ, The (1979)\".",
   "citations": [
-    {"id": 2872, "title": "Dreamscape (1984)"},
-    {"id": 2752, "title": "In Dreams (1999)"}
+    {"id": 26965, "title": "Boxer, The (1997)"},
+    {"id": 81932, "title": "Fighter, The (2010)"},
+    {"id": 6064, "title": "Harder They Fall, The (1956)"},
+    {"id": 49651, "title": "Rocky Balboa (2006)"},
+    {"id": 3428, "title": "Champ, The (1979)"}
   ],
-  "used_context": ["Dream Team, The (1989)", "Dreamscape (1984)", "In Dreams (1999)",
-                   "Nightmare on Elm Street 3: Dream Warriors, A (1987)",
-                   "Nightmare on Elm Street 4: The Dream Master, A (1988)"]
+  "used_context": ["Boxer, The (1997)", "Fighter, The (2010)", "Harder They Fall, The (1956)",
+                   "Rocky Balboa (2006)", "Champ, The (1979)"]
 }
 ```
 
@@ -31,10 +33,15 @@ citations are validated against the retrieved set (invented titles are dropped).
 **Request:** `POST /ask {"question": "which of these stars Leonardo DiCaprio?", "k": 5}`
 ```json
 {
-  "answer": "The movie that stars Leonardo DiCaprio is Wolf of Wall Street, The (2013).",
-  "citations": [{"id": 106782, "title": "Wolf of Wall Street, The (2013)"}],
-  "used_context": ["Three Musketeers, The (2011)", "The Artist (2011)", "Maps to the Stars (2014)",
-                   "Wolf of Wall Street, The (2013)", "For Your Consideration (2006)"]
+  "answer": "Leonardo DiCaprio stars in the following movies: The Departed (2006), where he plays an undercover cop infiltrating the Irish Mafia; Celebrity (1998); Gangs of New York (2002), in which he portrays an Irish immigrant seeking revenge; and Shutter Island (2010), where he plays a U.S. Marshal investigating a disappearance.",
+  "citations": [
+    {"id": 48516, "title": "Departed, The (2006)"},
+    {"id": 2356, "title": "Celebrity (1998)"},
+    {"id": 5956, "title": "Gangs of New York (2002)"},
+    {"id": 74458, "title": "Shutter Island (2010)"}
+  ],
+  "used_context": ["Departed, The (2006)", "Celebrity (1998)", "Maps to the Stars (2014)",
+                   "Gangs of New York (2002)", "Shutter Island (2010)"]
 }
 ```
 
@@ -47,28 +54,29 @@ citations are validated against the retrieved set (invented titles are dropped).
   "used_context": []
 }
 ```
-> Best retrieval similarity 0.22 < threshold 0.35 → the LLM is never called.
-> (A near-topic question like "who won the 2030 election?" *passes* the guard — election
-> movies exist at sim ~0.41 — but the LLM then returns a grounded "I don't have that
-> information", citing nothing.)
+> Best retrieval similarity 0.77 < threshold 0.83 → the LLM is never called. With the
+> `gte-small` embeddings cosine scores run high and tight — in-domain movie questions land
+> ~0.86–0.91, off-topic ones ~0.76–0.81 — so the guard sits at 0.83, cleanly between them.
 
 ---
 
-## Embedding enrichment — before/after (nearest neighbors to *Inception*)
+## Semantic search — retrieval by *meaning*, not title words
 
-Adding TMDB overview + keywords to the embedding text dramatically improved semantic
-neighbors (cosine distance shown; lower = closer).
+`POST /search/semantic` embeds the query and ranks movies by cosine similarity. With
+`gte-small` the vectors are strong enough that pure semantic search surfaces the right
+films even when the query words never appear in the title.
 
-| Before (title + genres only) | After (+ overview + keywords) |
-|---|---|
-| The Crazies (2010) | A Scanner Darkly (2006) |
-| Super 8 (2011) | Mission: Impossible – Ghost Protocol (2011) |
-| Knowing (2009) | Dreamscape (1984) |
-| Iron Man 2 (2010) | Source Code (2011) |
-| 2012 (2009) | Trance (2013) |
-| Megamind (2010) | Impostor (2002) |
+**`"organized crime mafia drama"`**
+> The Godfather (1972) · Mobsters (1991) · The Godfather: Part II (1974) · Il Divo (2008) ·
+> Jane Austen's Mafia! (1998) · Gomorrah (2008)
 
-Before = "other 2010 movies"; after = mind-bending sci-fi / heist / dream / subconscious films.
+**`"a mind-bending sci-fi about dreams"`**
+> Akira Kurosawa's Dreams (1990) · Paprika (2006) · In Dreams (1999) · Meshes of the
+> Afternoon (1943) · The Science of Sleep (2006) · Inception (2010)
+
+Neither *The Godfather* nor *Inception* / *Paprika* / *Solaris* contains the query words —
+they're retrieved on theme. (Upgrading `all-MiniLM-L6-v2` → `gte-small` lifted self-retrieval
+hit-rate@10 from 68% to 96%; see below.)
 
 ---
 
@@ -96,7 +104,13 @@ A new account with no ratings gets a graceful cold-start message instead.
 
 | Metric | Value |
 |---|---|
-| **Retrieval hit-rate@10** (keyword query → own movie in top-10, n=200) | **68%** (136/200) |
-| **Groundedness rate** (in-domain questions yielding a grounded, cited answer, n=8) | **100%** (8/8) |
+| **Retrieval hit-rate@10** (keyword query → own movie in top-10, n=200) | **96%** (192/200) |
+| **Groundedness rate** (in-domain questions yielding a grounded, cited answer, n=8) | **88%** (7/8) |
 
-Ungrounded `/ask` answers are logged (`logger "cinemind.ask"`) for monitoring.
+The hit-rate jumped from 68% (all-MiniLM-L6-v2) to 96% after upgrading to `gte-small` and
+raising `hnsw.ef_search` to 200 so the ANN index realizes the model's full recall.
+
+Groundedness is 7/8 because one answer cited nothing: the model referred to *"Inception"*
+while the stored title is *"Inception (2010)"*, so exact-title citation matching dropped it.
+Ungrounded `/ask` answers are logged (`logger "cinemind.ask"`) for monitoring — a known
+follow-up is to match cited titles ignoring the trailing year.
