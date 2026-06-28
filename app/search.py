@@ -26,12 +26,14 @@ from app.embeddings.model import embed_texts
 router = APIRouter(tags=["search"])
 
 # --- tunable knobs --------------------------------------------------------
-# Blend weight for the title keyword match [0, 1]. Env-overridable so it can be
-# tuned without a rebuild. 0.15 keeps exact-title queries landing on the nose
-# while letting strong semantic (overview/keyword) matches outrank mere
-# title-word coincidences (e.g. "brothers" -> films about brotherhood, not just
-# every movie with "Brothers" in the title).
-KEYWORD_WEIGHT = float(os.getenv("SEARCH_KEYWORD_WEIGHT", "0.15"))
+# Blend weight for the title keyword match [0, 1]. Env-overridable.
+# With the gte-small embeddings, pure vector search already lands exact titles on
+# the nose ("Toy Story"/"The Matrix"/"The Godfather" each rank #1) AND ranks
+# thematic queries well, so the keyword blend is OFF by default. It was a crutch
+# for the weaker all-MiniLM vectors; now any nonzero weight only lets coincidental
+# title-word overlaps win (e.g. "...mafia drama" promoting the parody "Mafia!"
+# over The Godfather). Set SEARCH_KEYWORD_WEIGHT>0 to re-enable the blend.
+KEYWORD_WEIGHT = float(os.getenv("SEARCH_KEYWORD_WEIGHT", "0.0"))
 CANDIDATE_MULTIPLIER = 5      # vector candidates to pull = max(k * this, MIN_POOL)
 MIN_CANDIDATE_POOL = 50
 # --------------------------------------------------------------------------

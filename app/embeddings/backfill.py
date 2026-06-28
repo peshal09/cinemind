@@ -15,13 +15,18 @@ from sqlalchemy import select, text
 
 from app.db.database import SessionLocal, engine
 from app.db.models import Movie
-from app.embeddings.model import build_movie_text, embed_texts
+from app.embeddings.model import MODEL_NAME, build_movie_text, embed_texts
 
 
 def ensure_hnsw_index() -> None:
     """Create the approximate-NN index (HNSW, cosine) if it doesn't exist.
 
     This is what makes the similarity search ANN rather than a full scan.
+
+    Also raise hnsw.ef_search (default 40 -> 200) as a database-level default so
+    every connection gets it: at 40 the ANN search misses some true neighbors
+    (hit-rate@10 ~72% vs ~77% exact); 200 closes that gap with negligible latency
+    at this corpus size.
     """
     with engine.begin() as conn:
         conn.execute(
@@ -30,6 +35,8 @@ def ensure_hnsw_index() -> None:
                 "ON movies USING hnsw (embedding vector_cosine_ops)"
             )
         )
+        db_name = conn.execute(text("SELECT current_database()")).scalar()
+        conn.execute(text(f'ALTER DATABASE "{db_name}" SET hnsw.ef_search = 200'))
 
 
 def backfill(force: bool = False) -> int:
@@ -40,7 +47,7 @@ def backfill(force: bool = False) -> int:
         movies = session.scalars(query).all()
 
         if movies:
-            print(f"Embedding {len(movies)} movies with all-MiniLM-L6-v2...")
+            print(f"Embedding {len(movies)} movies with {MODEL_NAME}...")
             texts = [
                 build_movie_text(
                     m.title, m.genres, m.overview, m.keywords,

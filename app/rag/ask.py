@@ -35,7 +35,10 @@ router = APIRouter(tags=["ask"])
 
 # Minimum best-match cosine similarity required before we call the LLM. Below
 # this, the question isn't covered by our data -> "I don't know". Tunable.
-SIMILARITY_THRESHOLD = float(os.getenv("ASK_SIMILARITY_THRESHOLD", "0.3"))
+# Calibrated for the gte-small embeddings, whose cosine scores run high and tight:
+# in-domain movie questions land ~0.86-0.91, off-topic ones ~0.76-0.81, so 0.83
+# sits cleanly in the gap. (The older all-MiniLM model needed ~0.30 here.)
+SIMILARITY_THRESHOLD = float(os.getenv("ASK_SIMILARITY_THRESHOLD", "0.83"))
 
 IDK_ANSWER = "I don't have enough info to answer that from the movie database."
 

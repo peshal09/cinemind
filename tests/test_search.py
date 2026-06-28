@@ -27,9 +27,10 @@ def test_exact_title_ranks_itself_first(client):
 
 
 def test_thematic_query_returns_sensible_movies(client):
-    # A natural-language theme should return topically-coherent movies. With
-    # title+genres-only embeddings, "about dreams" surfaces dream-themed films
-    # (incl. Dreamscape, a genuine sci-fi about dreams).
+    # A natural-language theme should return topically-coherent movies by MEANING,
+    # not literal title words. With the gte-small embeddings, "a mind-bending
+    # sci-fi about dreams" surfaces films like Inception, Paprika, Solaris and
+    # Waking Life -- most of which don't contain "dream" in the title at all.
     r = client.post(
         "/search/semantic",
         json={"query": "a mind-bending sci-fi about dreams", "k": 10},
@@ -37,8 +38,12 @@ def test_thematic_query_returns_sensible_movies(client):
     assert r.status_code == 200
     results = r.json()["results"]
     assert len(results) == 10
+    assert all(x["vector_score"] > 0.5 for x in results)  # real, strong similarity
 
     titles = [x["title"].lower() for x in results]
-    assert sum("dream" in t for t in titles) >= 6        # topically coherent
-    assert any("dreamscape" in t for t in titles)        # a real sci-fi-about-dreams
-    assert all(x["vector_score"] > 0 for x in results)   # real similarity scores
+    # A spread of genuinely dream / mind-bending films we expect to surface.
+    themed = ["inception", "paprika", "dreams", "solaris", "science of sleep",
+              "waking life", "altered states", "dreamcatcher", "eternal sunshine"]
+    assert sum(any(m in t for m in themed) for t in titles) >= 5  # topically on-point
+    # Thematic, not lexical: at least one strong match has no "dream" in its title.
+    assert any("dream" not in t for t in titles)
