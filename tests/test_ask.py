@@ -88,6 +88,39 @@ def test_cast_question_uses_top_cast(client, patch_provider):
     assert r.json()["citations"]                           # valid citation returned
 
 
+def _strip_year(title: str) -> str:
+    return re.sub(r"\s*\(\d{4}\)\s*$", "", title).strip()
+
+
+def test_citation_matching_is_format_tolerant(client, patch_provider):
+    # The model cites the right film but loosely: no year, article moved to the
+    # front ("Boxer, The (1997)" -> "The Boxer"). Robust matching must still keep it.
+    def responder(system, user):
+        loose = _strip_year(_first_context_title(user))
+        m = re.match(r"^(.*),\s*(The|A|An)$", loose)
+        if m:
+            loose = f"{m.group(2)} {m.group(1)}"
+        return json.dumps({"answer": "A great pick.", "citations": [loose]})
+
+    patch_provider(responder)
+    r = client.post("/ask", json={"question": "a film about boxing", "k": 5})
+    assert r.status_code == 200
+    assert r.json()["citations"]  # the loosely-formatted citation still validated
+
+
+def test_prose_answer_recovers_citations_from_text(client, patch_provider):
+    # The model ignores the JSON format and just names a film in prose; the fallback
+    # should recover the citation by scanning the answer text.
+    def responder(system, user):
+        base = _strip_year(_first_context_title(user))
+        return f'The standout here is "{base}", a great film.'
+
+    patch_provider(responder)
+    r = client.post("/ask", json={"question": "a film about boxing", "k": 5})
+    assert r.status_code == 200
+    assert r.json()["citations"]  # recovered from prose, no JSON returned
+
+
 def test_offtopic_hits_guard_without_calling_llm(client, patch_provider):
     # Genuinely out-of-corpus question -> groundedness guard short-circuits.
     def responder(system, user):

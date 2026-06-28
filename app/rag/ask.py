@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
@@ -111,22 +112,76 @@ def _parse_llm_json(text: str) -> tuple[str, list[str]]:
     try:
         data = json.loads(candidate)
         answer = str(data.get("answer", "")).strip()
-        cites = [str(c) for c in data.get("citations", []) if c]
+        cites = []
+        for c in data.get("citations", []):
+            # Tolerate citations given as objects ({"title": ...}) not bare strings.
+            if isinstance(c, dict):
+                c = c.get("title") or c.get("name") or ""
+            c = str(c).strip()
+            if c:
+                cites.append(c)
         return answer or text.strip(), cites
     except (json.JSONDecodeError, AttributeError):
         return text.strip(), []  # fallback: treat whole text as the answer
 
 
+# Leading/trailing articles MovieLens stores as a suffix ("Boxer, The").
+_ARTICLES = {"the", "a", "an", "le", "la", "les", "il", "el", "der", "die", "das"}
+
+
+def _norm(text: str) -> str:
+    """Common comparison form: lowercase, drop parentheticals (year / alt-title),
+    strip accents and punctuation, collapse whitespace."""
+    text = re.sub(r"\([^)]*\)", " ", text.lower())
+    text = "".join(
+        c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)
+    )
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _canonical_title(title: str) -> str:
+    """_norm, plus move a trailing article to the front so 'Boxer, The (1997)'
+    and 'The Boxer' (and 'Inception' vs 'Inception (2010)') all agree."""
+    t = _norm(title)
+    m = re.match(r"^(.*?)\s+(" + "|".join(_ARTICLES) + r")$", t)
+    return f"{m.group(2)} {m.group(1)}" if m else t
+
+
+def _title_variants(title: str) -> set[str]:
+    """Normalized forms to scan for inside a free-text answer: both the stored word
+    order ('boxer the') and the article-fronted one ('the boxer')."""
+    return {v for v in (_norm(title), _canonical_title(title)) if v}
+
+
 def _validate_citations(cited: list[str], movies: list[Movie]) -> list[dict]:
-    """Keep only cited titles that exactly match a retrieved movie (drop invented)."""
-    by_title = {m.title.lower(): m for m in movies}
+    """Keep cited titles that match a retrieved movie; drop invented ones. Matching
+    is tolerant: case-, year-, accent- and article-order-insensitive."""
+    by_canon = {}
+    for m in movies:
+        by_canon.setdefault(_canonical_title(m.title), m)
     out, seen = [], set()
     for title in cited:
-        movie = by_title.get(title.strip().lower())
+        movie = by_canon.get(_canonical_title(title))
         if movie is not None and movie.id not in seen:
             seen.add(movie.id)
             out.append({"id": movie.id, "title": movie.title})
     return out
+
+
+def resolve_citations(answer: str, cited: list[str], movies: list[Movie]) -> list[dict]:
+    """Citations for an answer: the model's validated citations, or — when it
+    ignored the JSON format and just named films in prose — a fallback that scans
+    the answer text for any retrieved movie's title."""
+    citations = _validate_citations(cited, movies)
+    if citations:
+        return citations
+    haystack = f" {_norm(answer)} "
+    mentioned = [
+        m.title for m in movies
+        if any(f" {v} " in haystack for v in _title_variants(m.title))
+    ]
+    return _validate_citations(mentioned, movies)
 
 
 @router.post("/ask")
@@ -143,13 +198,7 @@ def ask(body: AskRequest, db: Session = Depends(get_db)) -> dict:
 
     raw = get_provider().complete(SYSTEM_PROMPT, user_message)
     answer, cited = _parse_llm_json(raw)
-
-    citations = _validate_citations(cited, movies)
-    # Fallback: if the model didn't return parseable citations, infer from titles
-    # that literally appear in the answer.
-    if not citations:
-        mentioned = [m.title for m in movies if m.title.lower() in answer.lower()]
-        citations = _validate_citations(mentioned, movies)
+    citations = resolve_citations(answer, cited, movies)
 
     # The LLM ran (passed the guard) but produced no grounded citation -> log it.
     if not citations:

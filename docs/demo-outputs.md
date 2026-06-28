@@ -105,12 +105,12 @@ A new account with no ratings gets a graceful cold-start message instead.
 | Metric | Value |
 |---|---|
 | **Retrieval hit-rate@10** (keyword query → own movie in top-10, n=200) | **96%** (192/200) |
-| **Groundedness rate** (in-domain questions yielding a grounded, cited answer, n=8) | **88%** (7/8) |
+| **Groundedness rate** (in-domain questions yielding a grounded, cited answer, n=8) | **100%** (8/8) |
 
 The hit-rate jumped from 68% (all-MiniLM-L6-v2) to 96% after upgrading to `gte-small` and
 raising `hnsw.ef_search` to 200 so the ANN index realizes the model's full recall.
 
-Groundedness is 7/8 because one answer cited nothing: the model referred to *"Inception"*
-while the stored title is *"Inception (2010)"*, so exact-title citation matching dropped it.
-Ungrounded `/ask` answers are logged (`logger "cinemind.ask"`) for monitoring — a known
-follow-up is to match cited titles ignoring the trailing year.
+Citation matching is tolerant — case-, year-, accent- and article-order-insensitive — with a
+prose fallback that recovers titles a model names without the JSON format (e.g. it writes
+*"Inception"* and we resolve *Inception (2010)*), so valid citations aren't dropped.
+Ungrounded `/ask` answers are still logged (`logger "cinemind.ask"`) for monitoring.

@@ -27,8 +27,8 @@ from app.rag.ask import (
     SYSTEM_PROMPT,
     _parse_llm_json,
     _retrieve,
-    _validate_citations,
     build_context,
+    resolve_citations,
 )
 from app.llm.factory import get_provider
 
@@ -104,8 +104,8 @@ def groundedness(k: int = 5) -> dict:
             except Exception as exc:  # transient outage -> exclude from the rate
                 errors.append((q, type(exc).__name__))
                 continue
-            _, cited = _parse_llm_json(raw)
-            if _validate_citations(cited, movies):
+            answer, cited = _parse_llm_json(raw)
+            if resolve_citations(answer, cited, movies):
                 grounded += 1
             else:
                 ungrounded.append(q)
