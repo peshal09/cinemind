@@ -80,3 +80,53 @@ def test_cache_helpers_roundtrip(client):
     removed = redis_client.invalidate_user(user_id)
     assert removed >= 1
     assert redis_client.get_cached_feed(user_id, "hybrid", 5) is None
+
+
+def test_ask_key_normalizes_question():
+    # Case / surrounding-whitespace differences map to the same cache entry...
+    assert redis_client.ask_key("A Heist Thriller", 5) == redis_client.ask_key(
+        "  a heist   thriller ", 5
+    )
+    # ...but k is part of the key.
+    assert redis_client.ask_key("a heist thriller", 5) != redis_client.ask_key(
+        "a heist thriller", 10
+    )
+
+
+def test_generic_cache_roundtrip_and_invalidate_ask():
+    key = redis_client.ask_key("totally unique probe question xyz", 5)
+    redis_client.invalidate_ask()
+    assert redis_client.get_cached(key) is None        # miss
+
+    redis_client.set_cached(key, {"answer": "hi", "citations": []})
+    assert redis_client.get_cached(key) == {"answer": "hi", "citations": []}  # hit
+
+    assert redis_client.invalidate_ask() >= 1
+    assert redis_client.get_cached(key) is None         # cleared
+
+
+def test_why_is_cached_and_invalidated_by_rating(client, monkeypatch):
+    headers, user_id = _new_user(client)
+    # Rate a film so the user has taste (not the cold-start path).
+    client.post("/ratings", json={"movie_id": 1, "rating": 5.0}, headers=headers)
+
+    calls = {"n": 0}
+
+    class _FakeProvider:
+        def complete(self, system, user):
+            calls["n"] += 1
+            return "Because you loved similar films."
+
+    monkeypatch.setattr("app.rag.explain.get_provider", lambda: _FakeProvider())
+    redis_client.invalidate_user(user_id)  # start clean
+
+    first = client.get("/recommendations/2/why", headers=headers).json()
+    assert first["cached"] is False and calls["n"] == 1
+
+    second = client.get("/recommendations/2/why", headers=headers).json()
+    assert second["cached"] is True and calls["n"] == 1   # served from cache
+
+    # Re-rating invalidates this user's /why cache -> next call recomputes.
+    client.post("/ratings", json={"movie_id": 3, "rating": 4.0}, headers=headers)
+    third = client.get("/recommendations/2/why", headers=headers).json()
+    assert third["cached"] is False and calls["n"] == 2

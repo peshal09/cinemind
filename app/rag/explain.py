@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
+from app.cache import redis_client
 from app.db.database import get_db
 from app.db.models import Movie, Rating, User
 from app.llm.base import LLMError
@@ -53,15 +54,24 @@ def why(
     if movie is None:
         raise HTTPException(status_code=404, detail=f"Unknown movie_id: {movie_id}")
 
+    # Per-(user, movie) cache. This explanation depends on the user's ratings, so
+    # it's invalidated by redis_client.invalidate_user() whenever they re-rate.
+    cache_key = redis_client.why_key(current_user.id, movie_id)
+    cached = redis_client.get_cached(cache_key)
+    if cached is not None:
+        return {**cached, "cached": True}
+
     liked = _liked_movies(db, current_user.id)
     if not liked:
-        return {
+        result = {
             "movie_id": movie.id,
             "title": movie.title,
             "why": "You haven't rated any movies yet, so I can't personalize this. "
                    "Rate a few films you love and I'll explain your matches.",
             "based_on": [],
         }
+        redis_client.set_cached(cache_key, result)
+        return {**result, "cached": False}
 
     liked_lines = "\n".join(f"- {m.title} ({m.genres.replace('|', ', ')})" for m in liked)
     cast = ", ".join(c.get("name", "") for c in (movie.top_cast or []))
@@ -85,9 +95,11 @@ def why(
             status_code=503,
             detail="The explanation service is temporarily unavailable. Please try again shortly.",
         ) from exc
-    return {
+    result = {
         "movie_id": movie.id,
         "title": movie.title,
         "why": rationale,
         "based_on": [m.title for m in liked],
     }
+    redis_client.set_cached(cache_key, result)
+    return {**result, "cached": False}

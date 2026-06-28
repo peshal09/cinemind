@@ -12,8 +12,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.rag.ask as ask_module
+from app.cache import redis_client
 from app.llm.base import LLMUnavailableError
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def _clear_ask_cache():
+    # /ask now caches in Redis; several tests reuse the same question with
+    # different fake responders, so clear the cache before each for isolation.
+    redis_client.invalidate_ask()
+    yield
 
 
 @pytest.fixture(scope="module")
@@ -120,6 +129,24 @@ def test_prose_answer_recovers_citations_from_text(client, patch_provider):
     r = client.post("/ask", json={"question": "a film about boxing", "k": 5})
     assert r.status_code == 200
     assert r.json()["citations"]  # recovered from prose, no JSON returned
+
+
+def test_ask_is_cached_on_second_call(client, patch_provider):
+    # A repeated identical /ask is served from Redis -> the LLM is called once.
+    def responder(system, user):
+        return json.dumps(
+            {"answer": "Cached answer.", "citations": [_first_context_title(user)]}
+        )
+
+    fake = patch_provider(responder)
+    q = {"question": "a film about boxing", "k": 5}
+    first = client.post("/ask", json=q).json()
+    assert first["cached"] is False
+
+    second = client.post("/ask", json=q).json()
+    assert second["cached"] is True
+    assert len(fake.calls) == 1                  # LLM not re-called
+    assert second["answer"] == first["answer"]
 
 
 def test_llm_outage_degrades_to_503_not_500(client, patch_provider):

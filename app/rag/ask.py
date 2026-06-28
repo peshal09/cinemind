@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.cache import redis_client
 from app.db.database import get_db
 from app.db.models import Movie
 from app.embeddings.model import embed_texts
@@ -189,12 +190,21 @@ def resolve_citations(answer: str, cited: list[str], movies: list[Movie]) -> lis
 
 @router.post("/ask")
 def ask(body: AskRequest, db: Session = Depends(get_db)) -> dict:
+    # Identical questions re-call the LLM (slow + costs money), so serve them from
+    # Redis. Never cache an LLM-unavailable error — that path raises before we set.
+    cache_key = redis_client.ask_key(body.question, body.k)
+    cached = redis_client.get_cached(cache_key)
+    if cached is not None:
+        return {**cached, "cached": True}
+
     retrieved = _retrieve(db, body.question, body.k)
 
     # Groundedness guard: nothing similar enough -> don't call the LLM.
     best_score = max((score for _, score in retrieved), default=0.0)
     if best_score < SIMILARITY_THRESHOLD:
-        return {"answer": IDK_ANSWER, "citations": [], "used_context": []}
+        result = {"answer": IDK_ANSWER, "citations": [], "used_context": []}
+        redis_client.set_cached(cache_key, result)
+        return {**result, "cached": False}
 
     movies = [m for m, _ in retrieved]
     user_message = f"{build_context(movies)}\n\nQuestion: {body.question}"
@@ -211,8 +221,10 @@ def ask(body: AskRequest, db: Session = Depends(get_db)) -> dict:
     if not citations:
         logger.warning("ungrounded /ask answer | question=%r", body.question)
 
-    return {
+    result = {
         "answer": answer,
         "citations": citations,
         "used_context": [m.title for m in movies],
     }
+    redis_client.set_cached(cache_key, result)
+    return {**result, "cached": False}

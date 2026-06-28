@@ -66,6 +66,14 @@ def backfill(force: bool = False) -> int:
     # Always ensure the ANN index exists (idempotent).
     ensure_hnsw_index()
     print("HNSW index ready.")
+
+    # Retrieval just changed, so any cached /ask answers may now be stale.
+    if movies:
+        from app.cache import redis_client
+
+        removed = redis_client.invalidate_ask()
+        print(f"Invalidated {removed} cached /ask answer(s).")
+
     return len(movies)
 
 
