@@ -21,11 +21,8 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from pathlib import Path
-
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 
 from app.auth.dependencies import get_current_user
 from app.auth.router import router as auth_router
@@ -94,21 +91,8 @@ def _serialize(recs: list[Recommendation]) -> list[dict]:
     ]
 
 
-# Serve the single-file frontend from the same origin as the API: the browser
-# loads the page from / and its fetch() calls hit /ask, /search, etc. on the same
-# host, so there's no CORS to manage and the JWT rides on the Authorization header.
-FRONTEND_FILE = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
-
-
-@app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    """Serve the CineMind film-concierge UI."""
-    return FileResponse(FRONTEND_FILE)
-
-
-@app.get("/api")
-def api_info() -> dict:
-    """Machine-readable API banner."""
+@app.get("/")
+def root() -> dict:
     return {
         "name": "CineMind",
         "version": "0.1.0",
