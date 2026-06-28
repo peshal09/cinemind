@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.db.database import get_db
 from app.db.models import Movie, Rating, User
+from app.llm.base import LLMError
 from app.llm.factory import get_provider
 
 router = APIRouter(tags=["recommendations"])
@@ -77,7 +78,13 @@ def why(
         f"referencing the specific movies they liked."
     )
 
-    rationale = get_provider().complete(SYSTEM_PROMPT, user_message).strip()
+    try:
+        rationale = get_provider().complete(SYSTEM_PROMPT, user_message).strip()
+    except LLMError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The explanation service is temporarily unavailable. Please try again shortly.",
+        ) from exc
     return {
         "movie_id": movie.id,
         "title": movie.title,

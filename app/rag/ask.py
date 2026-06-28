@@ -19,7 +19,7 @@ import re
 import unicodedata
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,7 +27,10 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db.models import Movie
 from app.embeddings.model import embed_texts
+from app.llm.base import LLMError
 from app.llm.factory import get_provider
+
+LLM_UNAVAILABLE_DETAIL = "The answer service is temporarily unavailable. Please try again shortly."
 
 load_dotenv()
 
@@ -196,7 +199,11 @@ def ask(body: AskRequest, db: Session = Depends(get_db)) -> dict:
     movies = [m for m, _ in retrieved]
     user_message = f"{build_context(movies)}\n\nQuestion: {body.question}"
 
-    raw = get_provider().complete(SYSTEM_PROMPT, user_message)
+    try:
+        raw = get_provider().complete(SYSTEM_PROMPT, user_message)
+    except LLMError as exc:
+        logger.warning("LLM unavailable for /ask | question=%r | %s", body.question, exc)
+        raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE_DETAIL)
     answer, cited = _parse_llm_json(raw)
     citations = resolve_citations(answer, cited, movies)
 

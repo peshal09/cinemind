@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.rag.ask as ask_module
+from app.llm.base import LLMUnavailableError
 from app.main import app
 
 
@@ -119,6 +120,18 @@ def test_prose_answer_recovers_citations_from_text(client, patch_provider):
     r = client.post("/ask", json={"question": "a film about boxing", "k": 5})
     assert r.status_code == 200
     assert r.json()["citations"]  # recovered from prose, no JSON returned
+
+
+def test_llm_outage_degrades_to_503_not_500(client, patch_provider):
+    # When the provider exhausts all models, /ask must return a clean 503 with a
+    # clear message -- never a raw 500.
+    def responder(system, user):
+        raise LLMUnavailableError("all models unavailable")
+
+    patch_provider(responder)
+    r = client.post("/ask", json={"question": "a film about boxing", "k": 5})
+    assert r.status_code == 503
+    assert "temporarily unavailable" in r.json()["detail"].lower()
 
 
 def test_offtopic_hits_guard_without_calling_llm(client, patch_provider):
