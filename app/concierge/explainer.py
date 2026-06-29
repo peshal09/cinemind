@@ -115,6 +115,7 @@ def run(state: ConciergeState, db: Session, provider: LLMProvider) -> dict:
             score=_pick_score(cand),
             why=why,
             based_on=based_on,
+            poster_path=getattr(movie, "poster_path", None),
         ))
 
     state.results = results

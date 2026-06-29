@@ -20,3 +20,11 @@ export function cleanTitle(title: string): string {
 export function formatMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
+
+/** Build a TMDB poster URL from a stored poster_path (e.g. "/abc.jpg"). */
+export function posterUrl(
+  path: string | null | undefined,
+  size: "w92" | "w185" | "w342" | "w500" = "w342",
+): string | null {
+  return path ? `https://image.tmdb.org/t/p/${size}${path}` : null;
+}

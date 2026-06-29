@@ -39,9 +39,21 @@ def _fallback(state: ConciergeState, db: Session, exc: Exception) -> dict:
         recs = popular_movies(state.k)
         model = "popularity"
 
+    # Fetch poster paths for the fallback picks in one query.
+    from sqlalchemy import select
+
+    from app.db.models import Movie
+
+    posters = dict(
+        db.execute(
+            select(Movie.id, Movie.poster_path).where(
+                Movie.id.in_([r.movie_id for r in recs])
+            )
+        ).all()
+    )
     picks = [
         {"movie_id": r.movie_id, "title": r.title, "score": round(r.score, 4),
-         "why": "", "based_on": []}
+         "why": "", "based_on": [], "poster_path": posters.get(r.movie_id)}
         for r in recs
     ]
     logger.warning("concierge fallback (%s) after %s: %s", model, type(exc).__name__, exc)

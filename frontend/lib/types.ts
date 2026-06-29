@@ -14,6 +14,7 @@ export interface TokenResponse {
 export interface SearchResultItem {
   movie_id: number;
   title: string;
+  poster_path: string | null;
   score: number;
   vector_score: number;
   keyword_score: number;
@@ -45,6 +46,7 @@ export interface Pick {
   score: number;
   why: string;
   based_on: string[];
+  poster_path: string | null;
 }
 
 export type AgentName = "preference" | "retrieval" | "critic" | "explainer";

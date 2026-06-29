@@ -60,7 +60,7 @@ function ConciergeResponseView({ response }: { response: ConciergeResponse }) {
       {response.fallback && <FallbackBanner res={response} />}
       {response.intent && <IntentChips intent={response.intent} />}
       {response.picks.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-3">
           {response.picks.map((p, i) => (
             <PickCard key={p.movie_id} pick={p} rank={i + 1} />
           ))}

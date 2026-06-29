@@ -82,14 +82,14 @@ def semantic_search(body: SearchRequest, db: Session = Depends(get_db)) -> dict:
     # ANN candidate retrieval: nearest by cosine distance (uses the HNSW index).
     distance = Movie.embedding.cosine_distance(query_vec)
     rows = db.execute(
-        select(Movie.id, Movie.title, distance.label("dist"))
+        select(Movie.id, Movie.title, Movie.poster_path, distance.label("dist"))
         .where(Movie.embedding.is_not(None))
         .order_by(distance)
         .limit(pool)
     ).all()
 
     ranked = []
-    for movie_id, title, dist in rows:
+    for movie_id, title, poster_path, dist in rows:
         vector_score = 1.0 - float(dist)  # cosine distance -> cosine similarity
         keyword_score = _keyword_score(body.query, title)
         score = (1 - KEYWORD_WEIGHT) * vector_score + KEYWORD_WEIGHT * keyword_score
@@ -97,6 +97,7 @@ def semantic_search(body: SearchRequest, db: Session = Depends(get_db)) -> dict:
             {
                 "movie_id": movie_id,
                 "title": title,
+                "poster_path": poster_path,
                 "score": round(score, 4),
                 "vector_score": round(vector_score, 4),
                 "keyword_score": round(keyword_score, 4),

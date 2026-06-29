@@ -62,6 +62,7 @@ class Pick:
     score: float
     why: str = ""
     based_on: list[str] = field(default_factory=list)
+    poster_path: Optional[str] = None   # TMDB poster path, e.g. "/abc.jpg"
 
     def to_dict(self) -> dict:
         return {
@@ -70,6 +71,7 @@ class Pick:
             "score": round(self.score, 4),
             "why": self.why,
             "based_on": self.based_on,
+            "poster_path": self.poster_path,
         }
 
 
