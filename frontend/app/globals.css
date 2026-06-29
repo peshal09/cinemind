@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  CineMind arthouse theme — warm ink + a single marquee-gold accent.
+  shadcn tokens are HSL triplets (the Tailwind config reads them as hsl(var(--x))).
+  Dark by default; the .dark class on <html> just keeps dark: utilities working.
+*/
+@layer base {
+  :root {
+    --background: 37 25% 6%;          /* warm charcoal ink */
+    --foreground: 38 44% 92%;         /* warm off-white */
+
+    --card: 30 26% 12%;               /* raised card */
+    --card-foreground: 38 44% 92%;
+    --popover: 33 23% 9%;
+    --popover-foreground: 38 44% 92%;
+
+    --primary: 35 68% 62%;            /* marquee gold */
+    --primary-foreground: 35 68% 10%; /* dark ink for text on gold */
+
+    --secondary: 30 26% 12%;
+    --secondary-foreground: 40 18% 64%;
+    --muted: 33 23% 9%;
+    --muted-foreground: 40 18% 64%;
+    --accent: 30 26% 12%;
+    --accent-foreground: 37 77% 74%;  /* soft gold */
+
+    --destructive: 4 64% 48%;
+    --destructive-foreground: 38 44% 92%;
+
+    --border: 41 29% 17%;             /* hairline */
+    --input: 41 29% 17%;
+    --ring: 35 68% 62%;               /* gold focus ring */
+
+    --radius: 0.875rem;               /* 14px */
+
+    --chart-1: 35 68% 62%;
+    --chart-2: 37 77% 74%;
+    --chart-3: 40 18% 64%;
+    --chart-4: 41 29% 30%;
+    --chart-5: 33 23% 20%;
+
+    --sidebar: 33 23% 9%;
+    --sidebar-foreground: 38 44% 92%;
+    --sidebar-primary: 35 68% 62%;
+    --sidebar-primary-foreground: 35 68% 10%;
+    --sidebar-accent: 30 26% 12%;
+    --sidebar-accent-foreground: 37 77% 74%;
+    --sidebar-border: 41 29% 17%;
+    --sidebar-ring: 35 68% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* subtle warm radial backdrop, like the original concierge UI */
+    background-image: radial-gradient(
+      1200px 700px at 75% -10%,
+      hsl(35 25% 11%) 0%,
+      hsl(var(--background)) 55%
+    );
+    background-attachment: fixed;
+  }
+}

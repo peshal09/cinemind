@@ -8,3 +8,6 @@ __pycache__/
 data/*.zip
 *.egg-info/
 .DS_Store
+
+# Frontend (Next.js) — not part of the API image; built/deployed separately
+frontend/
