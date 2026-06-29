@@ -1,5 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ConciergeResponse } from "@/lib/types";
+import { AgentTrace } from "./AgentTrace";
 import { FallbackBanner } from "./FallbackBanner";
 import { IntentChips } from "./IntentChips";
 import { PickCard } from "./PickCard";
@@ -50,7 +51,7 @@ export function Turn({ turn }: { turn: TurnData }) {
                 No picks found — try rephrasing.
               </p>
             )}
-            {/* FE-4 plugs the AgentTrace in here. */}
+            <AgentTrace trace={turn.response.trace} />
           </>
         )}
       </div>

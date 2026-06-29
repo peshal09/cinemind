@@ -35,6 +35,6 @@ Built incrementally (FE-1 … FE-6):
 - ✅ **FE-1** — scaffold, arthouse design system, typed API client (`lib/api.ts`, `lib/types.ts`)
 - ✅ **FE-2** — auth: `AuthProvider` (JWT in `localStorage`), login/register dialog, gated state
 - ✅ **FE-3** — concierge chat: composer, thread, explained `PickCard`s, intent chips, fallback banner
-- ⏭️ **FE-4** — the agent trace ("show your work")
+- ✅ **FE-4** — agent trace ("show your work"): 4-step timeline, timings, status, expandable per-agent detail
 - ⏭️ **FE-5** — semantic search + responsive/a11y polish
 - ⏭️ **FE-6** — Vercel deploy
