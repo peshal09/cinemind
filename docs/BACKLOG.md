@@ -33,6 +33,12 @@ public link — see the open decision at the bottom).
 
 ## P1 — polish & robustness
 
+- [ ] **Show the plot (overview) in search results** — the `overview` exists in the DB
+  (9,620/9,742 movies) but the API doesn't return it. Small change: add `Movie.overview`
+  to `/search/semantic` results (and the concierge `Pick`), exactly like `poster_path` was
+  added; then render it (e.g. an expandable line under each result). Also feeds the movie
+  detail view (P0). Files: `app/search.py`, `app/concierge/{state,explainer}.py`, frontend
+  `SearchResults`/`PickCard`.
 - [ ] **New chat / clear thread** — the conversation grows forever with no reset.
 - [ ] **Session handling** — a JWT expiring mid-session shows an error toast but leaves the
   user "logged in"; auto-logout on 401.
