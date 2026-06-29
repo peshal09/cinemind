@@ -1,0 +1,159 @@
+"""Multi-agent concierge tests.
+
+Each agent is unit-tested in isolation (mocked LLM, real DB), plus an end-to-end
+endpoint test and a fallback test. Uses TestClient so the recommender MODELS are
+fitted by the app lifespan.
+"""
+
+import json
+import uuid
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.concierge import critic, explainer, preference, retrieval
+from app.concierge.state import Candidate, ConciergeState, Intent
+from app.db.database import SessionLocal
+from app.db.models import Movie
+from app.main import app
+
+
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(app) as c:  # lifespan fits the recommender MODELS
+        yield c
+
+
+class FakeProvider:
+    def __init__(self, responder):
+        self.responder = responder
+        self.calls = []
+
+    def complete(self, system: str, user: str) -> str:
+        self.calls.append((system, user))
+        return self.responder(system, user)
+
+
+def _new_user(client):
+    u = "concierge_" + uuid.uuid4().hex[:8]
+    client.post("/auth/register", json={"username": u, "password": "secret123"})
+    token = client.post(
+        "/auth/login", json={"username": u, "password": "secret123"}
+    ).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    user_id = client.get("/auth/me", headers=headers).json()["id"]
+    return headers, user_id
+
+
+# ------------------------------ agent units -------------------------------
+def test_preference_parses_intent_and_routes_unsupported(client):
+    intent_json = json.dumps({
+        "semantic_query": "mind-bending sci-fi about dreams",
+        "genres": ["Sci-Fi"],
+        "decade": "1990s",
+        "similar_to": ["Inception"],
+        "unsupported": ["max_runtime: 120"],
+    })
+    fake = FakeProvider(lambda s, u: intent_json)
+    state = ConciergeState(request="a 90s sci-fi like Inception under 2 hours", user_id=999999)
+    with SessionLocal() as db:
+        out = preference.run(state, db, fake)
+
+    assert out["parsed_ok"] is True
+    assert state.intent.genres == ["Sci-Fi"]
+    assert state.intent.decade == "1990s"
+    assert "max_runtime: 120" in state.intent.unsupported
+
+
+def test_retrieval_merges_semantic_and_collaborative(client):
+    state = ConciergeState(request="a fun space adventure", user_id=1)  # user 1 is a seeded MovieLens user
+    state.intent = Intent(semantic_query="a fun space adventure", raw_request="a fun space adventure")
+    with SessionLocal() as db:
+        out = retrieval.run(state, db, FakeProvider(lambda s, u: ""))
+
+    assert out["candidates"] > 0
+    assert len(state.candidates) == out["candidates"]
+    # Every candidate has its Movie row available for the critic.
+    assert all(c.movie_id in state.movies_by_id for c in state.candidates)
+
+
+def test_critic_filters_by_genre_and_notes_unsupported(client):
+    with SessionLocal() as db:
+        comedy = db.query(Movie).filter(Movie.genres.like("%Comedy%")).first()
+        drama_only = db.query(Movie).filter(Movie.genres == "Drama").first()
+        state = ConciergeState(request="something funny", user_id=999999, k=5)
+        state.intent = Intent(
+            semantic_query="funny", raw_request="funny",
+            genres=["Comedy"], unsupported=["max_runtime: 120"],
+        )
+        state.movies_by_id = {comedy.id: comedy, drama_only.id: drama_only}
+        state.candidates = [
+            Candidate(comedy.id, comedy.title, semantic_score=0.9, source="semantic"),
+            Candidate(drama_only.id, drama_only.title, semantic_score=0.8, source="semantic"),
+        ]
+        out = critic.run(state, db, FakeProvider(lambda s, u: ""))
+
+    titles = [c.title for c in state.shortlist]
+    assert comedy.title in titles
+    assert drama_only.title not in titles            # filtered out (not a Comedy)
+    assert out["noted_not_enforced"] == ["max_runtime: 120"]
+
+
+def test_explainer_attaches_why_to_picks(client):
+    with SessionLocal() as db:
+        movie = db.query(Movie).filter(Movie.overview.isnot(None)).first()
+        state = ConciergeState(request="something good", user_id=999999, k=5)
+        state.shortlist = [Candidate(movie.id, movie.title, semantic_score=0.9)]
+        state.movies_by_id = {movie.id: movie}
+        resp = json.dumps([{"title": movie.title, "why": "You'll love it.", "based_on": []}])
+        out = explainer.run(state, db, FakeProvider(lambda s, u: resp))
+
+    assert out["explained"] == 1
+    assert state.results[0].why == "You'll love it."
+
+
+# --------------------------- endpoint / orchestration ----------------------
+def _pipeline_responder(system, user):
+    # One mock standing in for both LLM-using agents.
+    if system.startswith("You convert"):                       # preference
+        return json.dumps({"semantic_query": "a fun space adventure", "genres": []})
+    return json.dumps([{"title": "t", "why": "Fits your vibe.", "based_on": []}])  # explainer
+
+
+def test_concierge_endpoint_full_pipeline(client, monkeypatch):
+    headers, _ = _new_user(client)
+    fake = FakeProvider(_pipeline_responder)
+    monkeypatch.setattr("app.concierge.orchestrator.get_provider", lambda: fake)
+
+    r = client.post("/concierge", json={"request": "a fun space adventure", "k": 3}, headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["fallback"] is False
+    assert [s["agent"] for s in body["trace"]] == ["preference", "retrieval", "critic", "explainer"]
+    assert all(s["ok"] for s in body["trace"])
+    assert body["picks"]                                       # non-empty shortlist
+
+
+def test_concierge_falls_back_when_agent_fails(client, monkeypatch):
+    headers, _ = _new_user(client)
+    monkeypatch.setattr(
+        "app.concierge.orchestrator.get_provider",
+        lambda: FakeProvider(lambda s, u: json.dumps({"semantic_query": "x"})),
+    )
+
+    def boom(state, db, provider):
+        raise RuntimeError("retrieval exploded")
+
+    monkeypatch.setattr("app.concierge.retrieval.run", boom)
+
+    r = client.post("/concierge", json={"request": "anything", "k": 3}, headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["fallback"] is True
+    assert body["picks"]                                       # recommender still answered
+    assert body["trace"][-1]["agent"] == "retrieval"
+    assert body["trace"][-1]["ok"] is False
+
+
+def test_concierge_requires_auth(client):
+    assert client.post("/concierge", json={"request": "x"}).status_code == 401

@@ -27,6 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth.dependencies import get_current_user
 from app.auth.router import router as auth_router
 from app.cache import redis_client
+from app.concierge.router import router as concierge_router
 from app.db.models import User
 from app.ratings import router as ratings_router
 from app.rag.ask import router as ask_router
@@ -75,6 +76,7 @@ app.include_router(ratings_router)
 app.include_router(search_router)
 app.include_router(ask_router)
 app.include_router(explain_router)
+app.include_router(concierge_router)
 
 
 def get_model(
