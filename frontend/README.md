@@ -33,7 +33,7 @@ locked-down backend, set its `CORS_ORIGINS` to the Vercel domain.)
 Built incrementally (FE-1 … FE-6):
 
 - ✅ **FE-1** — scaffold, arthouse design system, typed API client (`lib/api.ts`, `lib/types.ts`)
-- ⏭️ **FE-2** — auth (login/register, JWT)
+- ✅ **FE-2** — auth: `AuthProvider` (JWT in `localStorage`), login/register dialog, gated state
 - ⏭️ **FE-3** — concierge chat + explained pick cards
 - ⏭️ **FE-4** — the agent trace ("show your work")
 - ⏭️ **FE-5** — semantic search + responsive/a11y polish

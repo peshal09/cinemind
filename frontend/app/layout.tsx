@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -27,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`dark ${fraunces.variable} ${inter.variable}`}>
       <body className="min-h-dvh font-sans antialiased">
-        {children}
+        <AuthProvider>{children}</AuthProvider>
         <Toaster richColors position="top-center" />
       </body>
     </html>
