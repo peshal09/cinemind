@@ -19,10 +19,14 @@ from app.llm.base import LLMProvider
 
 NAME = "critic"
 
-SEMANTIC_WEIGHT = 0.6
-COLLAB_WEIGHT = 0.4
+# The request is the primary intent, so semantic relevance leads; collaborative
+# refines among relevant films. Both channels are min-max normalized over the
+# candidate pool FIRST — they're on different scales (cosine ~0..1 vs the
+# recommender's rating-scale ~0..5), so blending them raw lets generic popular
+# movies dominate every query.
+SEMANTIC_WEIGHT = 0.7
+COLLAB_WEIGHT = 0.3
 GENRE_MATCH_BOOST = 0.05      # per matched requested genre
-POPULARITY_PRIOR = 0.02      # tiny tie-breaker toward well-known films
 
 
 def _movie_genres(movie) -> set[str]:
@@ -81,14 +85,34 @@ def _passes_filters(cand: Candidate, movie, intent, seen: set[int]) -> bool:
     return True
 
 
-def _rerank_score(cand: Candidate, movie, intent) -> float:
-    score = SEMANTIC_WEIGHT * cand.semantic_score + COLLAB_WEIGHT * cand.collab_score
-    if intent.genres and movie is not None:
-        wanted = {g.lower() for g in intent.genres}
-        score += GENRE_MATCH_BOOST * len(wanted & _movie_genres(movie))
-    pop = getattr(movie, "popularity", None) or 0.0
-    score += POPULARITY_PRIOR * math.tanh(pop / 50.0)
-    return score
+def _minmax(value: float, lo: float, hi: float) -> float:
+    """Scale value into [0, 1] given the pool's range; 0 when the range is empty."""
+    return (value - lo) / (hi - lo) if hi > lo else 0.0
+
+
+def _rank_pool(pool: list[Candidate], movies_by_id: dict, intent) -> None:
+    """Set each candidate's blended .score in place. Normalizes the semantic and
+    collaborative channels separately (different scales) before blending, so
+    relevance — not raw popularity — drives the ranking."""
+    if not pool:
+        return
+    sem = [c.semantic_score for c in pool]
+    col = [c.collab_score for c in pool]
+    s_lo, s_hi = min(sem), max(sem)
+    c_lo, c_hi = min(col), max(col)
+    wanted = {g.lower() for g in intent.genres}
+    for c in pool:
+        movie = movies_by_id.get(c.movie_id)
+        boost = (
+            GENRE_MATCH_BOOST * len(wanted & _movie_genres(movie))
+            if wanted and movie is not None
+            else 0.0
+        )
+        c.score = (
+            SEMANTIC_WEIGHT * _minmax(c.semantic_score, s_lo, s_hi)
+            + COLLAB_WEIGHT * _minmax(c.collab_score, c_lo, c_hi)
+            + boost
+        )
 
 
 def _seen_movie_ids(db: Session, user_id: int) -> set[int]:
@@ -113,11 +137,8 @@ def run(state: ConciergeState, db: Session, provider: LLMProvider) -> dict:
         relaxed = True
         pool = [c for c in state.candidates if c.movie_id not in seen]
 
-    ranked = sorted(
-        pool,
-        key=lambda c: _rerank_score(c, state.movies_by_id.get(c.movie_id), intent),
-        reverse=True,
-    )
+    _rank_pool(pool, state.movies_by_id, intent)
+    ranked = sorted(pool, key=lambda c: c.score, reverse=True)
 
     # Light diversity: avoid a shortlist dominated by one genre.
     cap = max(2, math.ceil(state.k / 2))

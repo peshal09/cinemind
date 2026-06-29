@@ -49,9 +49,10 @@ class Intent:
 class Candidate:
     movie_id: int
     title: str
-    semantic_score: float = 0.0
-    collab_score: float = 0.0
-    source: str = ""           # "semantic" | "collaborative" | "semantic+collaborative" | "popularity"
+    semantic_score: float = 0.0   # cosine similarity to the query [0, 1]
+    collab_score: float = 0.0     # recommender score (rating-scale, NOT 0..1)
+    source: str = ""              # "semantic" | "collaborative" | "semantic+collaborative" | "popularity"
+    score: float = 0.0            # final blended rank score [0, 1] (set by the critic)
 
 
 @dataclass

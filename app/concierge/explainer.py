@@ -80,8 +80,9 @@ def _build_user_message(state: ConciergeState) -> str:
 
 
 def _pick_score(cand) -> float:
-    """A single representative score to surface for a pick."""
-    return max(cand.semantic_score, cand.collab_score)
+    """The blended [0,1] rank score from the critic; fall back to the raw channels
+    if the critic didn't run (e.g. in isolated unit tests)."""
+    return cand.score or max(cand.semantic_score, cand.collab_score)
 
 
 def run(state: ConciergeState, db: Session, provider: LLMProvider) -> dict:

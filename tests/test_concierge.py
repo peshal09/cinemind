@@ -99,6 +99,26 @@ def test_critic_filters_by_genre_and_notes_unsupported(client):
     assert out["noted_not_enforced"] == ["max_runtime: 120"]
 
 
+def test_critic_blends_normalized_scores(client):
+    # A strongly-relevant semantic match must outrank a generic film with a high
+    # collaborative/popularity score (different scales -> must be normalized first).
+    with SessionLocal() as db:
+        a = db.query(Movie).first()
+        b = db.query(Movie).offset(1).first()
+        state = ConciergeState(request="x", user_id=999999, k=5)
+        state.intent = Intent(semantic_query="x", raw_request="x")
+        state.movies_by_id = {a.id: a, b.id: b}
+        state.candidates = [
+            Candidate(a.id, a.title, semantic_score=0.85, collab_score=0.0, source="semantic"),
+            Candidate(b.id, b.title, semantic_score=0.20, collab_score=4.30, source="popularity"),
+        ]
+        critic.run(state, db, FakeProvider(lambda s, u: ""))
+
+    # Relevance leads: the semantic match (a) is ranked above the popular film (b).
+    assert state.shortlist[0].movie_id == a.id
+    assert all(0.0 <= c.score <= 1.5 for c in state.shortlist)  # normalized, not rating-scale
+
+
 def test_explainer_attaches_why_to_picks(client):
     with SessionLocal() as db:
         movie = db.query(Movie).filter(Movie.overview.isnot(None)).first()
