@@ -17,7 +17,6 @@ export function SearchResults({ results }: { results: SearchResultItem[] }) {
     <div className="space-y-2">
       {results.map((r, i) => {
         const year = parseYear(r.title);
-        const match = Math.max(0, Math.min(1, r.score));
         return (
           <Card
             key={r.movie_id}
@@ -42,20 +41,6 @@ export function SearchResults({ results }: { results: SearchResultItem[] }) {
                   {year}
                 </span>
               )}
-            </div>
-            <div
-              className="flex w-28 shrink-0 items-center gap-2"
-              title={`semantic ${r.vector_score.toFixed(2)} · title ${r.keyword_score.toFixed(2)}`}
-            >
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-background">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${match * 100}%` }}
-                />
-              </div>
-              <span className="w-9 text-right text-xs tabular-nums text-muted-foreground">
-                {match.toFixed(2)}
-              </span>
             </div>
           </Card>
         );

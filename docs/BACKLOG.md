@@ -62,6 +62,14 @@ public link — see the open decision at the bottom).
 
 ## P2 — nice-to-have
 
+- [ ] **Meaningful match indicator** — the per-movie 0–1 score was *removed from the UI*
+  (2026-06): `gte-small` compresses cosine similarity into a tight high band, so picks all
+  showed ~0.70 (and the concierge top pick is always ~0.70 = the 0.7 semantic weight × a
+  normalized-to-1 top match). The number read as false precision and looked uninformative.
+  If a confidence/relevance indicator is wanted later, derive one that actually *spreads*
+  across the visible range (or relabel as rank) — only re-introduce if it's genuinely
+  informative. The raw scores still flow through the API; just not shown.
+
 - [ ] "My taste" rail (deferred from FE-5) — surface the user's liked films.
 - [ ] Conversation **memory** / multi-turn refinement ("more like that") — backend Phase 4b.
 - [ ] Streaming agent trace (pairs with the latency item).
