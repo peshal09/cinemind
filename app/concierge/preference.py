@@ -24,8 +24,12 @@ SYSTEM_PROMPT = (
     "intent. Output ONLY the JSON object, no markdown or code fences.\n"
     "Schema (omit a field or use null/[] when not implied):\n"
     '{\n'
-    '  "semantic_query": "a concise description of the vibe/theme/plot to search for, '
-    'EXCLUDING hard filters like year or genre",\n'
+    '  "semantic_query": "what the FILM ITSELF is about — its mood, tone, themes, plot, '
+    "using evocative mood/genre words (e.g. \\\"warm cozy heartwarming feel-good\\\"). "
+    "EXCLUDE: the viewing OCCASION or setting (\\\"for a rainy Sunday\\\", \\\"date night\\\", "
+    "\\\"with the kids\\\"), quality words (\\\"best\\\", \\\"top-rated\\\"), and the year/genre "
+    '(separate fields). Those are not about the movie and pollute search with literal '
+    'title matches",\n'
     '  "genres": ["Comedy", ...],            // canonical genre words\n'
     '  "moods": ["dark", "feel-good", ...],\n'
     '  "decade": "1990s" | null,\n'
