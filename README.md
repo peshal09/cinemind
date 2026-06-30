@@ -1,9 +1,10 @@
 # CineMind
 
-An AI movie companion built on the MovieLens dataset — semantic search, grounded
-retrieval-augmented Q&A, personalized explanations, and a multi-agent "film
-concierge." A modular Python + FastAPI monolith with Postgres/pgvector, Redis, and
-a pluggable LLM layer (Google Gemini).
+A **full-stack** AI movie companion built on the MovieLens dataset — semantic search,
+grounded retrieval-augmented Q&A, personalized explanations, and a multi-agent "film
+concierge." A Python + FastAPI backend (Postgres/pgvector, Redis, a pluggable LLM layer —
+Google Gemini) with a **Next.js 14 + TypeScript** frontend that makes the agents' reasoning
+visible ("show your work").
 
 > Captured, real outputs from the running system live in
 > [`docs/demo-outputs.md`](docs/demo-outputs.md).
@@ -23,12 +24,15 @@ a pluggable LLM layer (Google Gemini).
 - **Multi-agent concierge** (`/concierge`) — a deterministic 4-agent pipeline
   (preference → retrieval → critic → explainer) that turns a free-text request into
   a ranked, explained shortlist, with a per-agent **trace** and graceful fallback.
+- **Conversational web UI** (`frontend/`) — a Next.js chat that renders the concierge's
+  explained picks (with movie posters) and a **visualization of the 4-agent trace**, plus
+  auth and a semantic-search mode.
 
 ## Architecture
 
 ```
-                         ┌──────────────────────── FastAPI ────────────────────────┐
-  client ── JWT ──▶      │  /auth  /recommend  /search/semantic  /ask  /why         │
+  Next.js 14 UI          ┌──────────────────────── FastAPI ────────────────────────┐
+  (frontend/) ─ JWT ─▶   │  /auth  /recommend  /search/semantic  /ask  /why         │
                          │  /ratings  /movies/{id}/similar  /concierge              │
                          └───┬───────────────┬──────────────┬───────────────┬──────┘
                              │               │              │               │
@@ -74,9 +78,11 @@ All recommendation/personalization endpoints are JWT-protected (`Authorization: 
 
 ## Tech stack
 
-Python 3.11 · FastAPI · SQLAlchemy · PostgreSQL + **pgvector** · Redis ·
+**Backend:** Python 3.11 · FastAPI · SQLAlchemy · PostgreSQL + **pgvector** · Redis ·
 sentence-transformers (`thenlper/gte-small`, 384-d) · Google Gemini (`google-genai`) ·
 scikit-learn · Docker Compose · pytest.
+
+**Frontend:** Next.js 14 (App Router) · TypeScript · Tailwind CSS · shadcn/ui.
 
 ## Project layout
 
@@ -97,8 +103,9 @@ app/
 ├── main.py          # FastAPI app + router wiring + model lifespan
 ├── ratings.py       # /ratings
 └── search.py        # /search/semantic
-docs/demo-outputs.md # captured real outputs
-tests/               # pytest suite (57 tests)
+docs/                # demo-outputs.md (real captures) · BACKLOG.md (publish-readiness)
+tests/               # pytest suite (58 tests)
+frontend/            # Next.js 14 web app (App Router, TS, Tailwind, shadcn/ui)
 ```
 
 ## Setup & running (Docker)
@@ -133,6 +140,22 @@ curl -s -X POST http://localhost:8000/concierge \
 `TMDB_API_KEY`, `ASK_SIMILARITY_THRESHOLD` (0.83 for gte-small), `SEARCH_KEYWORD_WEIGHT`,
 `SECRET_KEY`, plus DB/Redis URLs. See `.env.example`.
 
+## Frontend
+
+A Next.js 14 (App Router) + TypeScript + Tailwind + shadcn/ui web app in `frontend/` — the
+conversational concierge (explained picks with posters, the agent-trace "show your work"
+view, auth, and a semantic-search mode). It talks to the API over HTTP with a configurable
+base URL, so it runs independently of the backend.
+
+```bash
+cd frontend
+cp .env.local.example .env.local   # NEXT_PUBLIC_API_BASE (default http://localhost:8000)
+npm install
+npm run dev                        # http://localhost:3000
+```
+
+See [`frontend/README.md`](frontend/README.md) for details.
+
 ## Evaluation
 
 ```bash
@@ -147,7 +170,7 @@ docker compose exec api python -m app.eval.retrieval
 ## Tests
 
 ```bash
-docker compose exec api python -m pytest tests/ -q   # 57 passing
+docker compose exec api python -m pytest tests/ -q   # 58 passing
 ```
 
 ## Roadmap
@@ -156,9 +179,12 @@ docker compose exec api python -m pytest tests/ -q   # 57 passing
 - ✅ **Phase 2** — Postgres/Redis, JWT auth, ratings, Docker, CORS
 - ✅ **Phase 3** — embeddings + semantic search, RAG `/ask`, `/why`, eval
 - ✅ **Phase 4a** — multi-agent concierge (`/concierge`) with trace + fallback
+- ✅ **Frontend** — Next.js 14 conversational UI: auth, concierge chat + agent-trace view,
+  semantic search, movie posters
 - ⏭️ **Phase 4b** — conversational memory + LLM-driven tool routing ("more like that")
+- ⏭️ **Deploy** (Vercel + hosted backend) and the publish-readiness items in
+  [`docs/BACKLOG.md`](docs/BACKLOG.md)
 - ⏭️ **Runtime/rating constraints** — add `runtime`/`vote_average` (schema + TMDB re-enrich)
-- ⏭️ **Frontend + deploy** — a clickable demo visualizing the agent trace
 
 ## Attribution
 
