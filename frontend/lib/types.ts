@@ -47,6 +47,7 @@ export interface Pick {
   why: string;
   based_on: string[];
   poster_path: string | null;
+  overview: string | null;
 }
 
 export type AgentName = "preference" | "retrieval" | "critic" | "explainer";

@@ -45,9 +45,12 @@ export function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
           </span>
         </div>
 
-        {pick.why && (
+        {pick.why ? (
           <p className="text-sm leading-relaxed text-foreground/90">{pick.why}</p>
-        )}
+        ) : pick.overview ? (
+          // No personalized reason — show the plot synopsis (muted) instead of a blank card.
+          <p className="text-sm leading-relaxed text-muted-foreground">{pick.overview}</p>
+        ) : null}
 
         {pick.based_on.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">

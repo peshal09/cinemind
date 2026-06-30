@@ -23,7 +23,9 @@ SYSTEM_PROMPT = (
     "You explain, in 1-2 warm sentences each, why a user would enjoy specific movies. "
     "Use ONLY the provided data — the user's liked movies and each candidate's "
     "attributes. Reference the user's liked films by name when you can; never invent "
-    "facts. Respond with ONLY a JSON array, no markdown:\n"
+    "facts. Explain EVERY candidate provided — return exactly one object per candidate, "
+    "in the same order; if a candidate is a weaker fit, still describe what it offers. "
+    "Respond with ONLY a JSON array, no markdown:\n"
     '[{"title": "<exact candidate title>", "why": "<1-2 sentences>", '
     '"based_on": ["<liked title>", ...]}]'
 )
@@ -116,6 +118,7 @@ def run(state: ConciergeState, db: Session, provider: LLMProvider) -> dict:
             why=why,
             based_on=based_on,
             poster_path=getattr(movie, "poster_path", None),
+            overview=getattr(movie, "overview", None),  # frontend falls back to this if `why` is empty
         ))
 
     state.results = results

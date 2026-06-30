@@ -63,6 +63,7 @@ class Pick:
     why: str = ""
     based_on: list[str] = field(default_factory=list)
     poster_path: Optional[str] = None   # TMDB poster path, e.g. "/abc.jpg"
+    overview: Optional[str] = None       # plot synopsis (fallback when `why` is empty)
 
     def to_dict(self) -> dict:
         return {
@@ -72,6 +73,7 @@ class Pick:
             "why": self.why,
             "based_on": self.based_on,
             "poster_path": self.poster_path,
+            "overview": self.overview,
         }
 
 
