@@ -66,13 +66,19 @@ function ConciergeResponseView({ response }: { response: ConciergeResponse }) {
           ))}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          No picks found — try rephrasing.
-        </p>
+        <p className="text-sm text-muted-foreground">{emptyMessage(response)}</p>
       )}
       <AgentTrace trace={response.trace} />
     </>
   );
+}
+
+function emptyMessage(response: ConciergeResponse): string {
+  const critic = response.trace.find((s) => s.agent === "critic");
+  if ((critic?.detail as { no_match?: boolean } | undefined)?.no_match) {
+    return "No films match those constraints — note that CineMind's catalog only goes up to 2018.";
+  }
+  return "No picks found — try rephrasing.";
 }
 
 function LoadingState({ kind }: { kind: TurnKind }) {

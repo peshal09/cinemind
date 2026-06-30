@@ -11,14 +11,15 @@ public link — see the open decision at the bottom).
 
 ## P0 — core value & glaring bugs
 
-- [ ] **Constraint-aware retrieval** *(the "best movie of 2015" bug)*. Hard constraints
-  (year/decade/genre) are applied only in the Critic, *after* semantic retrieval — so if
-  the candidate pool has no matching films, the year filter empties it and the Critic
-  **relaxes into irrelevant results** (e.g. "best movie of 2015" → films merely *titled*
-  "Best …"). Fix: push constraints into the **Retrieval** agent's candidate generation
-  (query the DB filtered by year/genre first), rank superlative/quality queries ("best",
-  "top") by popularity since there's no theme, and when nothing matches **say so** instead
-  of relaxing. Files: `app/concierge/retrieval.py`, `app/concierge/critic.py`.
+- [~] **Constraint-aware retrieval** *(the "best movie of 2015" bug)*. **A + C done (2026-06):**
+  Retrieval now runs a **constrained DB query** (year/decade, genre, popularity) so
+  matching films enter the pool — "best of 2015" → Mad Max: Fury Road / Spectre / Everest;
+  "90s sci-fi about VR" → eXistenZ / The Thirteenth Floor. And the Critic **fails honestly**
+  (returns `no_match`, no relaxing) when a hard constraint matches nothing — "a 2023 thriller"
+  → empty with a "catalog ends 2018" message. (`app/concierge/{constraints,retrieval,critic}.py`)
+  **B still TODO:** rank pure superlative queries ("best/top", no theme) by *popularity*
+  within the constraint — needs a `sort`/superlative flag from the Preference agent so the
+  constrained query orders by popularity instead of embedding distance.
 - [x] **Reranking layer for "#1 = best match"** — DONE (2026-06). The Critic now **LLM-reranks**
   the top-12 blended candidates by true relevance (judging mood/theme/plot, not title-word
   overlap), degrading to the blended order on any LLM failure. "fun to watch" → *The

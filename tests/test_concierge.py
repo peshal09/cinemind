@@ -77,6 +77,41 @@ def test_retrieval_merges_semantic_and_collaborative(client):
     assert all(c.movie_id in state.movies_by_id for c in state.candidates)
 
 
+def test_retrieval_constrained_pulls_year_matching_films(client):
+    # A year constraint must pull actual in-year films into the pool (not rely on the
+    # semantic top-40 happening to contain them).
+    state = ConciergeState(request="a thriller", user_id=1)
+    state.intent = Intent(
+        semantic_query="a thriller", raw_request="a thriller",
+        year_min=1994, year_max=1994,
+    )
+    with SessionLocal() as db:
+        out = retrieval.run(state, db, FakeProvider(lambda s, u: ""))
+
+    assert out["constrained"] > 0
+    years = [
+        (getattr(state.movies_by_id.get(c.movie_id), "release_date", None) or "")[:4]
+        for c in state.candidates
+    ]
+    assert "1994" in years  # an actual 1994 film made it into the pool
+
+
+def test_critic_honest_empty_when_constraint_matches_nothing(client):
+    # Out-of-catalog year -> the Critic must return an honest empty, not relax into junk.
+    with SessionLocal() as db:
+        movies = db.query(Movie).filter(Movie.release_date.like("199%")).limit(2).all()
+        state = ConciergeState(request="x", user_id=999999, k=5)
+        state.intent = Intent(
+            semantic_query="x", raw_request="x", year_min=2099, year_max=2099,
+        )
+        state.movies_by_id = {m.id: m for m in movies}
+        state.candidates = [Candidate(m.id, m.title, semantic_score=0.8) for m in movies]
+        out = critic.run(state, db, FakeProvider(lambda s, u: ""))
+
+    assert out["no_match"] is True
+    assert state.shortlist == []
+
+
 def test_critic_filters_by_genre_and_notes_unsupported(client):
     with SessionLocal() as db:
         comedy = db.query(Movie).filter(Movie.genres.like("%Comedy%")).first()

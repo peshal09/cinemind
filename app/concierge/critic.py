@@ -16,6 +16,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.concierge.constraints import has_hard_constraint, year_bounds
 from app.concierge.state import Candidate, ConciergeState
 from app.db.models import Rating
 from app.llm.base import LLMError, LLMProvider
@@ -72,11 +73,7 @@ def _passes_filters(cand: Candidate, movie, intent, seen: set[int]) -> bool:
             return False
 
     year = _movie_year(movie)
-    lo, hi = intent.year_min, intent.year_max
-    if intent.decade and not (lo or hi):
-        d = intent.decade.strip().rstrip("s")
-        if d[:4].isdigit():
-            lo, hi = int(d[:4]), int(d[:4]) + 9
+    lo, hi = year_bounds(intent)
     if (lo or hi) and year is None:
         return False
     if lo and year is not None and year < lo:
@@ -131,6 +128,18 @@ def _rank_pool(pool: list[Candidate], movies_by_id: dict, intent) -> None:
 def _seen_movie_ids(db: Session, user_id: int) -> set[int]:
     rows = db.execute(select(Rating.movie_id).where(Rating.user_id == user_id)).scalars()
     return set(rows)
+
+
+def _enforced(intent) -> dict:
+    """The hard constraints actually applied — surfaced in the trace."""
+    return {
+        "genres": intent.genres,
+        "year_range": [intent.year_min, intent.year_max]
+        if (intent.year_min or intent.year_max) else intent.decade,
+        "min_popularity": intent.min_popularity,
+        "cast": intent.cast,
+        "exclude_seen": intent.exclude_seen,
+    }
 
 
 def _parse_int_array(text: str) -> list[int]:
@@ -203,11 +212,23 @@ def run(state: ConciergeState, db: Session, provider: LLMProvider) -> dict:
         if _passes_filters(c, state.movies_by_id.get(c.movie_id), intent, seen)
     ]
 
-    # Don't return nothing: if hard filters eliminated everyone, relax them and just
-    # drop already-seen, so the user still gets a sensible (if looser) shortlist.
     relaxed = False
     pool = kept
     if not pool:
+        if has_hard_constraint(intent):
+            # A hard constraint (year/genre/popularity) matched nothing in the catalog
+            # (e.g. an out-of-range year). Be honest — don't relax into irrelevant films.
+            state.shortlist = []
+            return {
+                "candidates_in": len(state.candidates),
+                "after_filters": 0,
+                "no_match": True,
+                "reranked": False,
+                "shortlist": [],
+                "enforced": _enforced(intent),
+                "noted_not_enforced": intent.unsupported,
+            }
+        # No hard constraint, but somehow empty (e.g. all already-seen) -> relax.
         relaxed = True
         pool = [c for c in state.candidates if c.movie_id not in seen]
 
@@ -223,12 +244,6 @@ def run(state: ConciergeState, db: Session, provider: LLMProvider) -> dict:
         "relaxed": relaxed,
         "reranked": reranked,
         "shortlist": [c.title for c in shortlist],
-        "enforced": {
-            "genres": intent.genres,
-            "year_range": [intent.year_min, intent.year_max] if (intent.year_min or intent.year_max) else intent.decade,
-            "min_popularity": intent.min_popularity,
-            "cast": intent.cast,
-            "exclude_seen": intent.exclude_seen,
-        },
+        "enforced": _enforced(intent),
         "noted_not_enforced": intent.unsupported,
     }
