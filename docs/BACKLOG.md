@@ -19,13 +19,13 @@ public link — see the open decision at the bottom).
   (query the DB filtered by year/genre first), rank superlative/quality queries ("best",
   "top") by popularity since there's no theme, and when nothing matches **say so** instead
   of relaxing. Files: `app/concierge/retrieval.py`, `app/concierge/critic.py`.
-- [ ] **Reranking layer for "#1 = best match"** — embedding retrieval has a *lexical bias*:
-  vague mood queries surface literal title hits (e.g. "fun to watch" → the film *Fun (1994)*;
-  before the prompt fix, "rainy sunday warm" → *Rain*). Distilling a cleaner `semantic_query`
-  in the Preference agent helped a lot, but the residual needs a **reranker** — an LLM or
-  cross-encoder pass that reorders the candidate pool by true relevance to the request, so
-  the top result is always the most relevant, not the most lexically similar. (Partially
-  mitigated 2026-06: Preference now strips occasion/quality words from `semantic_query`.)
+- [x] **Reranking layer for "#1 = best match"** — DONE (2026-06). The Critic now **LLM-reranks**
+  the top-12 blended candidates by true relevance (judging mood/theme/plot, not title-word
+  overlap), degrading to the blended order on any LLM failure. "fun to watch" → *The
+  Inbetweeners Movie / Bring It On* (not the film *Fun*); "rainy sunday warm" → *Sleepless in
+  Seattle / Notting Hill*. **Caveat:** it only reorders what retrieval surfaced — queries
+  where the right films never enter the pool (e.g. "best of 2015") still need the
+  constraint-aware retrieval fix below.
 - [ ] **Rating UI** — the frontend never calls `/ratings`, so every user is permanently
   cold-start and the personalization/`/why` story is unreachable. Add a way to rate movies
   (e.g. on a movie detail view) → builds a taste profile.

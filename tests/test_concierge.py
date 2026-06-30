@@ -119,6 +119,25 @@ def test_critic_blends_normalized_scores(client):
     assert all(0.0 <= c.score <= 1.5 for c in state.shortlist)  # normalized, not rating-scale
 
 
+def test_critic_llm_reranks_pool(client):
+    # Blended pre-rank would be a, b, c (descending semantic); the LLM reranker
+    # returns [3, 1, 2], so the shortlist must come out c, a, b.
+    with SessionLocal() as db:
+        a, b, c = db.query(Movie).limit(3).all()
+        state = ConciergeState(request="x", user_id=999999, k=3)
+        state.intent = Intent(semantic_query="x", raw_request="x")
+        state.movies_by_id = {a.id: a, b.id: b, c.id: c}
+        state.candidates = [
+            Candidate(a.id, a.title, semantic_score=0.9),
+            Candidate(b.id, b.title, semantic_score=0.8),
+            Candidate(c.id, c.title, semantic_score=0.7),
+        ]
+        out = critic.run(state, db, FakeProvider(lambda s, u: "[3, 1, 2]"))
+
+    assert out["reranked"] is True
+    assert [p.movie_id for p in state.shortlist] == [c.id, a.id, b.id]
+
+
 def test_explainer_attaches_why_to_picks(client):
     with SessionLocal() as db:
         movie = db.query(Movie).filter(Movie.overview.isnot(None)).first()

@@ -1,21 +1,24 @@
-"""Critic agent — narrow and order (no LLM).
+"""Critic agent — narrow, rank, and rerank.
 
 Enforces the constraints we have data for (genre, year/decade, popularity, cast,
-exclude-already-seen), applies light genre diversity, and re-ranks to the final
-top-k. Constraints we can't enforce (runtime, rating) are passed through to the
-trace as "noted, not enforced" rather than silently ignored.
+exclude-already-seen), pre-ranks by a normalized semantic+collaborative blend, then
+asks the LLM to **rerank** the top candidates by true relevance to the request — so
+the #1 pick reflects meaning, not superficial title-word overlap (e.g. a film merely
+titled "Fun" isn't necessarily a fun movie). Constraints we can't enforce (runtime,
+rating) are passed through to the trace as "noted, not enforced".
 """
 
 from __future__ import annotations
 
-import math
+import json
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.concierge.state import Candidate, ConciergeState
 from app.db.models import Rating
-from app.llm.base import LLMProvider
+from app.llm.base import LLMError, LLMProvider
 
 NAME = "critic"
 
@@ -27,6 +30,16 @@ NAME = "critic"
 SEMANTIC_WEIGHT = 0.7
 COLLAB_WEIGHT = 0.3
 GENRE_MATCH_BOOST = 0.05      # per matched requested genre
+RERANK_POOL = 12             # top-N (by blend) handed to the LLM reranker
+
+RERANK_PROMPT = (
+    "You rerank movie candidates by how well each matches the user's request. Judge by "
+    "the request's actual MEANING — mood, theme, plot, tone — NOT superficial title-word "
+    'overlap (a film merely titled "Fun" is not necessarily a fun movie; a film with '
+    '"rain" in the title is not necessarily cozy). Drop poor fits. Respond with ONLY a '
+    "JSON array of the candidate NUMBERS, best match first, at most {k} items. "
+    "Example: [3, 1, 7]"
+)
 
 
 def _movie_genres(movie) -> set[str]:
@@ -120,6 +133,67 @@ def _seen_movie_ids(db: Session, user_id: int) -> set[int]:
     return set(rows)
 
 
+def _parse_int_array(text: str) -> list[int]:
+    """Pull a JSON array of ints from the model's text (tolerant of stray prose)."""
+    m = re.search(r"\[[^\]]*\]", text, re.DOTALL)
+    if not m:
+        return []
+    try:
+        data = json.loads(m.group(0))
+    except (json.JSONDecodeError, TypeError):
+        return []
+    out: list[int] = []
+    for x in data if isinstance(data, list) else []:
+        try:
+            out.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _llm_rerank(
+    state: ConciergeState, pool: list[Candidate], provider: LLMProvider
+) -> tuple[list[Candidate], bool]:
+    """Reorder `pool` by true relevance to the request via one LLM call and take the
+    top `state.k`. Degrades to the existing (blended-score) order on any failure —
+    a rerank hiccup never breaks the pipeline."""
+    k = state.k
+    if len(pool) <= 1:
+        return pool[:k], False
+
+    lines = []
+    for i, c in enumerate(pool, start=1):
+        movie = state.movies_by_id.get(c.movie_id)
+        genres = (getattr(movie, "genres", "") or "").replace("|", ", ")
+        overview = (getattr(movie, "overview", None) or "")[:160]
+        lines.append(f"{i}. {c.title} — {genres} — {overview}")
+    user_message = f"Request: {state.request}\n\nCandidates:\n" + "\n".join(lines)
+
+    try:
+        raw = provider.complete(RERANK_PROMPT.format(k=k), user_message)
+    except LLMError:
+        return pool[:k], False  # transient LLM issue -> keep blended order
+
+    picked, used = [], set()
+    for n in _parse_int_array(raw):
+        idx = n - 1
+        if 0 <= idx < len(pool) and idx not in used:
+            used.add(idx)
+            picked.append(pool[idx])
+        if len(picked) >= k:
+            break
+    if not picked:
+        return pool[:k], False  # unparseable -> blended order
+
+    # Top up if the model returned fewer than k.
+    for i, c in enumerate(pool):
+        if len(picked) >= k:
+            break
+        if i not in used:
+            picked.append(c)
+    return picked, True
+
+
 def run(state: ConciergeState, db: Session, provider: LLMProvider) -> dict:
     intent = state.intent
     seen = _seen_movie_ids(db, state.user_id) if intent.exclude_seen else set()
@@ -137,37 +211,17 @@ def run(state: ConciergeState, db: Session, provider: LLMProvider) -> dict:
         relaxed = True
         pool = [c for c in state.candidates if c.movie_id not in seen]
 
+    # Pre-rank by the normalized blend, take the top pool, then LLM-rerank by relevance.
     _rank_pool(pool, state.movies_by_id, intent)
-    ranked = sorted(pool, key=lambda c: c.score, reverse=True)
-
-    # Light diversity: avoid a shortlist dominated by one genre.
-    cap = max(2, math.ceil(state.k / 2))
-    genre_counts: dict[str, int] = {}
-    shortlist: list[Candidate] = []
-    for cand in ranked:
-        movie = state.movies_by_id.get(cand.movie_id)
-        primary = next(iter(_movie_genres(movie)), None) if movie else None
-        if primary and genre_counts.get(primary, 0) >= cap:
-            continue
-        shortlist.append(cand)
-        if primary:
-            genre_counts[primary] = genre_counts.get(primary, 0) + 1
-        if len(shortlist) >= state.k:
-            break
-
-    # If diversity capping under-filled, top up from the ranked remainder.
-    if len(shortlist) < state.k:
-        for cand in ranked:
-            if cand not in shortlist:
-                shortlist.append(cand)
-            if len(shortlist) >= state.k:
-                break
+    pre = sorted(pool, key=lambda c: c.score, reverse=True)[:RERANK_POOL]
+    shortlist, reranked = _llm_rerank(state, pre, provider)
 
     state.shortlist = shortlist
     return {
         "candidates_in": len(state.candidates),
         "after_filters": len(kept),
         "relaxed": relaxed,
+        "reranked": reranked,
         "shortlist": [c.title for c in shortlist],
         "enforced": {
             "genres": intent.genres,
